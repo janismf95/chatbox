@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Multi-Peer Chat</title>
+</head>
+<body>
+  <h2>Multi-Peer Chat</h2>
+  <p>Il tuo ID: <span id="my-id">...</span></p>
+
+  <h3>Utenti connessi:</h3>
+  <ul id="peer-list"></ul>
+
+  <input id="msg" placeholder="Messaggio" />
+  <button onclick="sendMessage()">Invia</button>
+
+  <div id="chat-log"></div>
+
+  <!-- PeerJS Library -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+  <!-- Script -->
+  <script>
+    let myId;
+    const knownPeers = {};
+    const connections = [];
+
+    const isCoordinator = confirm("Vuoi essere il coordinatore della stanza?");
+    const peer = new Peer();
+
+    peer.on('open', id => {
+      myId = id;
+      document.getElementById('my-id').textContent = id;
+
+      if (!isCoordinator) {
+        const coordinatorId = prompt("Inserisci l'ID del coordinatore (visto nell'altra finestra):");
+        if (coordinatorId && coordinatorId !== myId) {
+          const conn = peer.connect(coordinatorId);
+          setupConnection(conn);
+        } else {
+          alert("ID non valido o uguale al tuo.");
+        }
+      }
+    });
+
+    peer.on('connection', conn => {
+      setupConnection(conn);
+    });
+
+    function setupConnection(conn) {
+      conn.on('open', () => {
+        connections.push(conn);
+        knownPeers[conn.peer] = conn;
+
+        if (!isCoordinator) {
+          conn.send({ type: "register", id: myId });
+        }
+
+        conn.on('data', data => {
+          if (data.type === "chat") {
+            log(`${conn.peer}: ${data.message}`);
+          } else if (data.type === "peerlist") {
+            updatePeerList(data.list);
+          } else if (data.type === "register" && isCoordinator) {
+            broadcastPeerList();
+          }
+        });
+      });
+    }
+
+    function sendMessage() {
+      const msg = document.getElementById('msg').value;
+      log("Tu: " + msg);
+      connections.forEach(c => c.send({ type: "chat", message: msg }));
+    }
+
+    function log(msg) {
+      document.getElementById('chat-log').innerHTML += `<p>${msg}</p>`;
+    }
+
+    function updatePeerList(list) {
+      const ul = document.getElementById('peer-list');
+      ul.innerHTML = "";
+      list.forEach(id => {
+        const li = document.createElement('li');
+        li.textContent = id;
+        ul.appendChild(li);
+      });
+    }
+
+    function broadcastPeerList() {
+      const allIds = [myId, ...Object.keys(knownPeers)];
+      connections.forEach(c => c.send({ type: "peerlist", list: allIds }));
+      updatePeerList(allIds);
+    }
+
+    if (isCoordinator) {
+      setInterval(broadcastPeerList, 5000);
+    }
+  </script>
+</body>
+</html>
